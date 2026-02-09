@@ -99,3 +99,54 @@ export async function deleteEntry(formData: FormData) {
 
     revalidatePath('/')
 }
+
+export async function getDriversList() {
+    const supabase = await createClient()
+    const { data } = await supabase
+        .from('time_entries')
+        .select('driver_name')
+        .order('driver_name')
+
+    if (!data) return []
+
+    // Return unique driver names
+    return Array.from(new Set(data.map(d => d.driver_name)))
+}
+
+export async function getDriverReport(driverName: string, monthStr: string) {
+    const supabase = await createClient()
+
+    // monthStr is expected in format "YYYY-MM"
+    const startDate = `${monthStr}-01`
+
+    // Calculate end date (last day of the month)
+    const [year, month] = monthStr.split('-').map(Number)
+    const lastDay = new Date(year, month, 0).getDate()
+    const endDate = `${monthStr}-${lastDay}`
+
+    const { data, error } = await supabase
+        .from('time_entries')
+        .select('*')
+        .eq('driver_name', driverName)
+        .gte('work_date', startDate)
+        .lte('work_date', endDate)
+        .order('work_date', { ascending: true })
+
+    if (error) {
+        console.error('Error fetching driver report:', error)
+        return null
+    }
+
+    const totalTarget = data.reduce((sum, entry) => sum + Number(entry.target_hours), 0)
+    const totalActual = data.reduce((sum, entry) => sum + Number(entry.actual_hours), 0)
+    const balance = totalActual - totalTarget
+
+    return {
+        entries: data,
+        summary: {
+            totalTarget,
+            totalActual,
+            balance
+        }
+    }
+}

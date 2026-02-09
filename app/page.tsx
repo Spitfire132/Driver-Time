@@ -1,7 +1,9 @@
 import { getEntries, getDriverStats, deleteEntry } from './actions'
 import TimeEntryForm from '@/components/TimeEntryForm'
 import DriverLeaderboard from '@/components/DriverLeaderboard'
-import { Clock, TrendingUp, TrendingDown, Target, Trash2 } from 'lucide-react'
+import SignOutButton from '@/components/SignOutButton'
+import { Clock, TrendingUp, TrendingDown, Target, Trash2, FileText } from 'lucide-react'
+import Link from 'next/link'
 import clsx from 'clsx'
 
 export const dynamic = 'force-dynamic'
@@ -27,6 +29,17 @@ export default async function Home() {
               DriverTime
             </h1>
             <p className="text-zinc-400 mt-1">Track your driving hours against targets.</p>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <Link
+              href="/reports"
+              className="text-zinc-400 hover:text-white transition-colors text-sm font-medium flex items-center gap-2"
+            >
+              <FileText size={16} />
+              Reports
+            </Link>
+            <SignOutButton />
           </div>
 
           <div className="flex gap-4">
