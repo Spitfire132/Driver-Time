@@ -288,23 +288,35 @@ export default function TimeEntryForm() {
     };
 
     const deleteDriver = async (id: string, name: string) => {
-        if (!confirm(`Soll der Fahrer "${name}" wirklich gelöscht werden? Alle zugehörigen Schichten könnten ebenfalls gelöscht werden!`)) return;
+        if (!confirm(`Soll der Fahrer "${name}" wirklich gelöscht werden? ACHTUNG: Alle Schichten dieses Fahrers werden ebenfalls unwiderruflich gelöscht!`)) return;
 
+        // 1. Erst alle Schichten des Fahrers löschen (Foreign Key Constraint)
+        const { error: dataError } = await supabase.from('shifts').delete().eq('driver_id', id);
+
+        if (dataError) {
+            alert("Fehler beim Löschen der Schichten: " + dataError.message);
+            return;
+        }
+
+        // 2. Dann den Fahrer löschen
         const { error } = await supabase.from('drivers').delete().eq('id', id);
 
         if (error) {
             alert("Fehler beim Löschen des Fahrers: " + error.message);
         } else {
-            // 2. Audit Log
+            // 3. Audit Log
             await supabase.from('audit_logs').insert([{
                 user_id: user.id,
                 action: 'DELETE',
                 table_name: 'drivers',
-                details: `GELÖSCHT: Fahrer ${name} (ID: ${id})`
+                details: `GELÖSCHT: Fahrer ${name} (ID: ${id}) und alle zugehörigen Schichten`
             }]);
 
             setDrivers(prev => prev.filter(d => d.id !== id));
-            setSuccessMsg(`Fahrer "${name}" gelöscht! 🗑️`);
+            // Auch die Schichten aus der Ansicht nehmen
+            setShifts(prev => prev.filter(s => s.driver_id !== id));
+
+            setSuccessMsg(`Fahrer "${name}" und alle Daten gelöscht! 🗑️`);
             if (view === 'audit') fetchAuditLogs();
         }
     };
