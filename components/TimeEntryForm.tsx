@@ -41,6 +41,13 @@ export default function TimeEntryForm() {
 
     const [successMsg, setSuccessMsg] = useState('');
 
+    // Custom Popups
+    const [popup, setPopup] = useState<{ message: string, type: 'error' | 'info' } | null>(null);
+    const [confirmDialog, setConfirmDialog] = useState<{ message: string, onConfirm: () => void } | null>(null);
+
+    // Auto-close Popup after 5s if it's info, keep errors until clicked? user said "better popup", usually manual close is safer for errors.
+    // Let's just have a manual close for now to be safe.
+
     // --- 1. SESSION CHECK (Stabilisiert) ---
     useEffect(() => {
         async function init() {
@@ -117,7 +124,7 @@ export default function TimeEntryForm() {
         if (error) {
             console.error('Error fetching shifts:', error);
             // Für die Diagnose:
-            alert("Fehler beim Laden der Schichten: " + error.message);
+            setPopup({ type: 'error', message: "Fehler beim Laden der Schichten: " + error.message });
         }
 
         if (data) {
@@ -184,7 +191,7 @@ export default function TimeEntryForm() {
     };
 
     const addDriver = async () => {
-        if (!newDriverName) return alert("Bitte Namen eingeben");
+        if (!newDriverName) return setPopup({ type: 'error', message: "Bitte Namen eingeben" });
 
         // 1. Fahrer anlegen
         const { data, error } = await supabase
@@ -193,7 +200,7 @@ export default function TimeEntryForm() {
             .select();
 
         if (error) {
-            alert(error.message);
+            setPopup({ type: 'error', message: error.message });
         } else {
             // 2. Audit Log Eintrag
             if (data && data.length > 0) {
@@ -213,7 +220,7 @@ export default function TimeEntryForm() {
 
     const saveShift = async (e: any) => {
         e.preventDefault();
-        if (!selectedDriver) return alert("Bitte Fahrer wählen");
+        if (!selectedDriver) return setPopup({ type: 'error', message: "Bitte Fahrer wählen" });
 
         const startIso = new Date(`${date}T${startTime}:00`).toISOString();
         let endDateObj = new Date(`${date}T${endTime}:00`);
@@ -233,7 +240,7 @@ export default function TimeEntryForm() {
         }]).select();
 
         if (error) {
-            alert(error.message);
+            setPopup({ type: 'error', message: error.message });
         } else {
             // Fahrer Name ermitteln
             const driverName = drivers.find(d => d.id === selectedDriver)?.name || "Unbekannt";
@@ -287,64 +294,70 @@ export default function TimeEntryForm() {
         return options;
     };
 
-    const deleteDriver = async (id: string, name: string) => {
-        if (!confirm(`Soll der Fahrer "${name}" wirklich gelöscht werden? ACHTUNG: Alle Schichten dieses Fahrers werden ebenfalls unwiderruflich gelöscht!`)) return;
+    const deleteDriver = (id: string, name: string) => {
+        setConfirmDialog({
+            message: `Soll der Fahrer "${name}" wirklich gelöscht werden? ACHTUNG: Alle Schichten dieses Fahrers werden ebenfalls unwiderruflich gelöscht!`,
+            onConfirm: async () => {
+                // 1. Erst alle Schichten des Fahrers löschen (Foreign Key Constraint)
+                const { error: dataError } = await supabase.from('shifts').delete().eq('driver_id', id);
 
-        // 1. Erst alle Schichten des Fahrers löschen (Foreign Key Constraint)
-        const { error: dataError } = await supabase.from('shifts').delete().eq('driver_id', id);
+                if (dataError) {
+                    setPopup({ type: 'error', message: "Fehler beim Löschen der Schichten: " + dataError.message });
+                    return;
+                }
 
-        if (dataError) {
-            alert("Fehler beim Löschen der Schichten: " + dataError.message);
-            return;
-        }
+                // 2. Dann den Fahrer löschen
+                const { error } = await supabase.from('drivers').delete().eq('id', id);
 
-        // 2. Dann den Fahrer löschen
-        const { error } = await supabase.from('drivers').delete().eq('id', id);
+                if (error) {
+                    setPopup({ type: 'error', message: "Fehler beim Löschen des Fahrers: " + error.message });
+                } else {
+                    // 3. Audit Log
+                    await supabase.from('audit_logs').insert([{
+                        user_id: user.id,
+                        action: 'DELETE',
+                        table_name: 'drivers',
+                        details: `GELÖSCHT: Fahrer ${name} (ID: ${id}) und alle zugehörigen Schichten`
+                    }]);
 
-        if (error) {
-            alert("Fehler beim Löschen des Fahrers: " + error.message);
-        } else {
-            // 3. Audit Log
-            await supabase.from('audit_logs').insert([{
-                user_id: user.id,
-                action: 'DELETE',
-                table_name: 'drivers',
-                details: `GELÖSCHT: Fahrer ${name} (ID: ${id}) und alle zugehörigen Schichten`
-            }]);
+                    setDrivers(prev => prev.filter(d => d.id !== id));
+                    // Auch die Schichten aus der Ansicht nehmen
+                    setShifts(prev => prev.filter(s => s.driver_id !== id));
 
-            setDrivers(prev => prev.filter(d => d.id !== id));
-            // Auch die Schichten aus der Ansicht nehmen
-            setShifts(prev => prev.filter(s => s.driver_id !== id));
-
-            setSuccessMsg(`Fahrer "${name}" und alle Daten gelöscht! 🗑️`);
-            if (view === 'audit') fetchAuditLogs();
-        }
+                    setSuccessMsg(`Fahrer "${name}" und alle Daten gelöscht! 🗑️`);
+                    if (view === 'audit') fetchAuditLogs();
+                }
+            }
+        });
     };
 
     // --- ANZEIGE LOGIK ---
 
-    const deleteShift = async (id: string, driverName: string, dateStr: string, timeRange: string) => {
-        if (!confirm(`Soll der Eintrag von ${driverName} am ${dateStr} (${timeRange}) wirklich gelöscht werden?`)) return;
+    const deleteShift = (id: string, driverName: string, dateStr: string, timeRange: string) => {
+        setConfirmDialog({
+            message: `Soll der Eintrag von ${driverName} am ${dateStr} (${timeRange}) wirklich gelöscht werden?`,
+            onConfirm: async () => {
+                // 1. Aus DB löschen
+                const { error } = await supabase.from('shifts').delete().eq('id', id);
 
-        // 1. Aus DB löschen
-        const { error } = await supabase.from('shifts').delete().eq('id', id);
+                if (error) {
+                    setPopup({ type: 'error', message: "Fehler beim Löschen: " + error.message });
+                } else {
+                    // 2. Audit Log
+                    await supabase.from('audit_logs').insert([{
+                        user_id: user.id,
+                        action: 'DELETE',
+                        table_name: 'shifts',
+                        details: `GELÖSCHT: Fahrer ${driverName} | Datum: ${dateStr} | Zeit: ${timeRange} | (ID: ${id})`
+                    }]);
 
-        if (error) {
-            alert("Fehler beim Löschen: " + error.message);
-        } else {
-            // 2. Audit Log
-            await supabase.from('audit_logs').insert([{
-                user_id: user.id,
-                action: 'DELETE',
-                table_name: 'shifts',
-                details: `GELÖSCHT: Fahrer ${driverName} | Datum: ${dateStr} | Zeit: ${timeRange} | (ID: ${id})`
-            }]);
-
-            // 3. UI Update (Optimistisch)
-            setShifts(prev => prev.filter(s => s.id !== id));
-            setSuccessMsg("Eintrag erfolgreich gelöscht! 🗑️");
-            if (view === 'audit') fetchAuditLogs();
-        }
+                    // 3. UI Update (Optimistisch)
+                    setShifts(prev => prev.filter(s => s.id !== id));
+                    setSuccessMsg("Eintrag erfolgreich gelöscht! 🗑️");
+                    if (view === 'audit') fetchAuditLogs();
+                }
+            }
+        });
     };
 
     // --- ANZEIGE LOGIK ---
@@ -435,7 +448,10 @@ export default function TimeEntryForm() {
                                                 <li key={d.id} className="flex justify-between items-center bg-gray-900 px-3 py-2 rounded hover:bg-gray-800 group">
                                                     <span className="font-bold text-sm">👤 {d.name}</span>
                                                     <button
-                                                        onClick={() => deleteDriver(d.id, d.name)}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            deleteDriver(d.id, d.name);
+                                                        }}
                                                         className="text-red-500 opacity-0 group-hover:opacity-100 transition text-xs border border-red-900 hover:bg-red-900/50 px-2 py-1 rounded"
                                                         title="Fahrer löschen"
                                                     >
@@ -520,7 +536,8 @@ export default function TimeEntryForm() {
                                             </td>
                                             <td className="py-3 text-right no-print">
                                                 <button
-                                                    onClick={() => {
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
                                                         const dateStr = new Date(s.start_time).toLocaleDateString('de-DE');
                                                         const timeStart = new Date(s.start_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
                                                         const timeEnd = new Date(s.end_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
@@ -659,6 +676,57 @@ export default function TimeEntryForm() {
                             ))}
                         </tbody>
                     </table>
+                </div>
+            )}
+
+            {/* CUSTOM POPUP (Error/Info) */}
+            {popup && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4">
+                    <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-lg shadow-2xl max-w-md w-full animate-in fade-in zoom-in duration-200">
+                        <div className="flex items-center gap-3 mb-4">
+                            <span className="text-3xl">{popup.type === 'error' ? '⚠️' : 'ℹ️'}</span>
+                            <h3 className={`font-bold text-xl ${popup.type === 'error' ? 'text-red-500' : 'text-blue-500'}`}>
+                                {popup.type === 'error' ? 'Achtung' : 'Hinweis'}
+                            </h3>
+                        </div>
+                        <p className="text-gray-300 mb-6">{popup.message}</p>
+                        <button
+                            onClick={() => setPopup(null)}
+                            className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-3 rounded border border-zinc-600 transition"
+                        >
+                            Verstanden
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* CUSTOM CONFIRM DIALOG */}
+            {confirmDialog && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4">
+                    <div className="bg-zinc-900 border border-red-900/50 p-6 rounded-lg shadow-2xl max-w-md w-full animate-in fade-in zoom-in duration-200">
+                        <div className="flex items-center gap-3 mb-4">
+                            <span className="text-3xl">🛑</span>
+                            <h3 className="font-bold text-xl text-red-500">Bestätigung erforderlich</h3>
+                        </div>
+                        <p className="text-gray-300 mb-8">{confirmDialog.message}</p>
+                        <div className="flex gap-4">
+                            <button
+                                onClick={() => setConfirmDialog(null)}
+                                className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-3 rounded border border-zinc-600 transition"
+                            >
+                                Abbrechen
+                            </button>
+                            <button
+                                onClick={() => {
+                                    confirmDialog.onConfirm();
+                                    setConfirmDialog(null);
+                                }}
+                                className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded shadow-lg transition"
+                            >
+                                Löschen
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
