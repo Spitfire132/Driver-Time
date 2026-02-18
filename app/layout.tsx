@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DriverTime",
-  description: "Effizientes Zeitmanagement für deine Flotte",
+  title: "TimeNova",
+  description: "TimeNova - Zeiterfassung für Profis",
 };
 
 export default function RootLayout({

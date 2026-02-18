@@ -3,6 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '../utils/supabase/client';
+import { getHoliday } from '../utils/holidays';
+import { Clock, Copy, MessageCircle, ExternalLink } from 'lucide-react';
+
+import Calendar from './Calendar';
 
 export default function TimeEntryForm() {
     const router = useRouter();
@@ -13,10 +17,18 @@ export default function TimeEntryForm() {
     const [user, setUser] = useState<any>(null);
     const [view, setView] = useState<'dashboard' | 'audit' | 'reports'>('dashboard');
 
-    // Daten
+    // Date Picker State
+    const [showCalendar, setShowCalendar] = useState(false);
+    const [origin, setOrigin] = useState('');
+
+    useEffect(() => {
+        setOrigin(window.location.origin);
+    }, []);
+
     const [drivers, setDrivers] = useState<any[]>([]);
     const [shifts, setShifts] = useState<any[]>([]);
     const [auditLogs, setAuditLogs] = useState<any[]>([]);
+
 
     // Report State
     const [reportDriver, setReportDriver] = useState('');
@@ -42,7 +54,7 @@ export default function TimeEntryForm() {
     const [successMsg, setSuccessMsg] = useState('');
 
     // Custom Popups
-    const [popup, setPopup] = useState<{ message: string, type: 'error' | 'info' } | null>(null);
+    const [popup, setPopup] = useState<{ message: string, type: 'error' | 'info' | 'success' } | null>(null);
     const [confirmDialog, setConfirmDialog] = useState<{ message: string, onConfirm: () => void } | null>(null);
 
     // Auto-close Popup after 5s if it's info, keep errors until clicked? user said "better popup", usually manual close is safer for errors.
@@ -67,7 +79,6 @@ export default function TimeEntryForm() {
 
                 // Jetzt laden wir die Daten parallel
                 await Promise.all([fetchDrivers(), fetchShifts()]);
-
                 setLoading(false);
             } catch (err) {
                 console.error("Init Fehler:", err);
@@ -111,7 +122,7 @@ export default function TimeEntryForm() {
 
     // --- 3. DATENBANK FUNKTIONEN ---
     const fetchDrivers = async () => {
-        const { data } = await supabase.from('drivers').select('*');
+        const { data } = await supabase.from('drivers').select('*').order('created_at');
         if (data) setDrivers(data);
     };
 
@@ -176,6 +187,7 @@ export default function TimeEntryForm() {
                 totalRes += net;
                 breakRes += s.break_minutes;
             });
+
             setReportSummary({
                 totalHours: totalRes,
                 totalBreaks: breakRes
@@ -183,17 +195,19 @@ export default function TimeEntryForm() {
         }
     };
 
+
+
     // --- 4. BUTTON AKTIONEN ---
     const handleSignOut = async () => {
         await supabase.auth.signOut();
         router.refresh(); // Seite neu laden
-        window.location.href = '/login'; // Harter Redirect
+        window.location.href = '/'; // Harter Redirect zur Startseite
     };
 
     const addDriver = async () => {
         if (!newDriverName) return setPopup({ type: 'error', message: "Bitte Namen eingeben" });
 
-        // 1. Fahrer anlegen
+        // 1. Mitarbeiter anlegen
         const { data, error } = await supabase
             .from('drivers')
             .insert([{ name: newDriverName, boss_id: user.id }])
@@ -208,19 +222,31 @@ export default function TimeEntryForm() {
                     user_id: user.id,
                     action: 'INSERT',
                     table_name: 'drivers',
-                    details: `Neuer Fahrer: ${newDriverName} (ID: ${data[0].id})`
+                    details: `Neuer Mitarbeiter: ${newDriverName} (ID: ${data[0].id})`
                 }]);
             }
 
             setNewDriverName('');
             fetchDrivers();
-            setSuccessMsg(`Fahrer "${newDriverName}" erfolgreich angelegt! ✅`);
+            setSuccessMsg(`Mitarbeiter "${newDriverName}" erfolgreich angelegt! ✅`);
         }
+    };
+
+    const copyLink = (key: string) => {
+        const link = `${origin}/driver?token=${key}`;
+        navigator.clipboard.writeText(link);
+        setSuccessMsg("Link kopiert! 📋");
+    };
+
+    const shareWhatsApp = (key: string, name: string) => {
+        const link = `${origin}/driver?token=${key}`;
+        const text = `Hallo ${name}, hier ist dein persönlicher Link für die Zeiterfassung bei TimeNova: ${link}`;
+        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
     };
 
     const saveShift = async (e: any) => {
         e.preventDefault();
-        if (!selectedDriver) return setPopup({ type: 'error', message: "Bitte Fahrer wählen" });
+        if (!selectedDriver) return setPopup({ type: 'error', message: "Bitte Mitarbeiter wählen" });
 
         const startIso = new Date(`${date}T${startTime}:00`).toISOString();
         let endDateObj = new Date(`${date}T${endTime}:00`);
@@ -242,7 +268,7 @@ export default function TimeEntryForm() {
         if (error) {
             setPopup({ type: 'error', message: error.message });
         } else {
-            // Fahrer Name ermitteln
+            // Mitarbeiter Name ermitteln
             const driverName = drivers.find(d => d.id === selectedDriver)?.name || "Unbekannt";
 
             // 2. Audit Log Eintrag
@@ -296,7 +322,7 @@ export default function TimeEntryForm() {
 
     const deleteDriver = (id: string, name: string) => {
         setConfirmDialog({
-            message: `Soll der Fahrer "${name}" wirklich gelöscht werden? ACHTUNG: Alle Schichten dieses Fahrers werden ebenfalls unwiderruflich gelöscht!`,
+            message: `Soll der Mitarbeiter "${name}" wirklich gelöscht werden? ACHTUNG: Alle Schichten dieses Mitarbeiters werden ebenfalls unwiderruflich gelöscht!`,
             onConfirm: async () => {
                 // 1. Erst alle Schichten des Fahrers löschen (Foreign Key Constraint)
                 const { error: dataError } = await supabase.from('shifts').delete().eq('driver_id', id);
@@ -310,21 +336,21 @@ export default function TimeEntryForm() {
                 const { error } = await supabase.from('drivers').delete().eq('id', id);
 
                 if (error) {
-                    setPopup({ type: 'error', message: "Fehler beim Löschen des Fahrers: " + error.message });
+                    setPopup({ type: 'error', message: "Fehler beim Löschen des Mitarbeiters: " + error.message });
                 } else {
                     // 3. Audit Log
                     await supabase.from('audit_logs').insert([{
                         user_id: user.id,
                         action: 'DELETE',
                         table_name: 'drivers',
-                        details: `GELÖSCHT: Fahrer ${name} (ID: ${id}) und alle zugehörigen Schichten`
+                        details: `GELÖSCHT: Mitarbeiter ${name} (ID: ${id}) und alle zugehörigen Schichten`
                     }]);
 
                     setDrivers(prev => prev.filter(d => d.id !== id));
                     // Auch die Schichten aus der Ansicht nehmen
                     setShifts(prev => prev.filter(s => s.driver_id !== id));
 
-                    setSuccessMsg(`Fahrer "${name}" und alle Daten gelöscht! 🗑️`);
+                    setSuccessMsg(`Mitarbeiter "${name}" und alle Daten gelöscht! 🗑️`);
                     if (view === 'audit') fetchAuditLogs();
                 }
             }
@@ -348,7 +374,7 @@ export default function TimeEntryForm() {
                         user_id: user.id,
                         action: 'DELETE',
                         table_name: 'shifts',
-                        details: `GELÖSCHT: Fahrer ${driverName} | Datum: ${dateStr} | Zeit: ${timeRange} | (ID: ${id})`
+                        details: `GELÖSCHT: Mitarbeiter ${driverName} | Datum: ${dateStr} | Zeit: ${timeRange} | (ID: ${id})`
                     }]);
 
                     // 3. UI Update (Optimistisch)
@@ -385,20 +411,42 @@ export default function TimeEntryForm() {
             </div>
         );
     }
+    // --- RENDER HELPERS ---
+
+
+    if (loading) return <div className="text-white p-10 text-center animate-pulse">Lade Dashboard... ⏳</div>;
 
     // 3. Das Dashboard (Nur sichtbar wenn User da ist)
     return (
         <div className="bg-black text-white p-6 font-sans rounded-lg min-h-screen">
+
+
+
             {/* HEADER */}
             <div className="no-print border-b border-gray-800 pb-6 mb-6 print:hidden">
                 <div className="flex justify-between items-center mb-6">
                     <div>
-                        <h1 className="text-3xl font-bold flex items-center gap-2">🚕 DriverTime</h1>
-                        <p className="text-gray-500 text-sm">Track your driving hours.</p>
+                        <h1 className="text-3xl font-bold flex items-center gap-2">
+                            <Clock className="text-emerald-500" size={32} />
+                            TimeNova
+                        </h1>
+                        <p className="text-gray-500 text-sm">Track your working hours.</p>
                     </div>
-                    <button onClick={handleSignOut} className="bg-gray-800 px-4 py-2 rounded text-sm hover:bg-gray-700 border border-gray-700">
-                        Sign Out
-                    </button>
+                    <div className="flex flex-col items-end gap-2">
+                        {user?.user_metadata && (
+                            <div className="text-right">
+                                <p className="font-bold text-white text-sm">
+                                    {user.user_metadata.first_name} {user.user_metadata.last_name}
+                                </p>
+                                <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">
+                                    {user.user_metadata.company_name}
+                                </p>
+                            </div>
+                        )}
+                        <button onClick={handleSignOut} className="bg-gray-800 px-4 py-2 rounded text-xs hover:bg-gray-700 border border-gray-700 flex items-center gap-2 transition-colors">
+                            <span className="text-red-400">Log Out</span>
+                        </button>
+                    </div>
                 </div>
 
                 {/* TABS */}
@@ -427,39 +475,83 @@ export default function TimeEntryForm() {
             {view === 'dashboard' && (
                 <div>
                     <div className="no-print bg-gray-900 p-6 rounded mb-8 border border-gray-800 print:hidden">
-                        {/* Fahrer Management Row */}
+                        {/* Mitarbeiter Management Row */}
                         <div className="flex flex-wrap gap-8 mb-8">
                             {/* Fahrer Add */}
                             <div className="flex-1 min-w-[300px]">
-                                <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Neuen Fahrer anlegen</h3>
+                                <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Neuen Mitarbeiter anlegen</h3>
                                 <div className="flex gap-2 items-center bg-gray-950 p-3 rounded border border-gray-800">
                                     <input className="bg-gray-900 p-2 rounded text-white border border-gray-700 outline-none flex-1" placeholder="Name..." value={newDriverName} onChange={e => setNewDriverName(e.target.value)} />
                                     <button onClick={addDriver} className="text-green-500 border border-green-500 px-4 py-2 rounded font-bold hover:bg-green-900">+ Add</button>
                                 </div>
                             </div>
 
-                            {/* Fahrer Liste (Mini) */}
-                            <div className="flex-1 min-w-[300px]">
-                                <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Fahrer verwalten ({drivers.length})</h3>
-                                <div className="bg-gray-950 p-2 rounded border border-gray-800 max-h-[150px] overflow-y-auto custom-scrollbar">
-                                    {drivers.length === 0 ? <p className="text-gray-600 text-sm p-2">Noch keine Fahrer.</p> : (
-                                        <ul className="space-y-1">
-                                            {drivers.map(d => (
-                                                <li key={d.id} className="flex justify-between items-center bg-gray-900 px-3 py-2 rounded hover:bg-gray-800 group">
-                                                    <span className="font-bold text-sm">👤 {d.name}</span>
+                            {/* Mitarbeiter Liste (Magic Link Update) */}
+                            <div className="w-full">
+                                <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Mitarbeiter & Magic Links ({drivers.length})</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {drivers.length === 0 ? <p className="text-gray-600 text-sm p-2">Noch keine Mitarbeiter.</p> : (
+                                        drivers.map(d => (
+                                            <div key={d.id} className="bg-gray-950 p-4 rounded border border-gray-800 flex flex-col gap-3 group">
+                                                <div className="flex justify-between items-center border-b border-gray-900 pb-2">
+                                                    <span className="font-bold text-lg text-white">👤 {d.name}</span>
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             deleteDriver(d.id, d.name);
                                                         }}
                                                         className="text-red-500 opacity-0 group-hover:opacity-100 transition text-xs border border-red-900 hover:bg-red-900/50 px-2 py-1 rounded"
-                                                        title="Fahrer löschen"
+                                                        title="Mitarbeiter löschen"
                                                     >
-                                                        🗑️ Entfernen
+                                                        🗑️
                                                     </button>
-                                                </li>
-                                            ))}
-                                        </ul>
+                                                </div>
+
+                                                {/* Magic Link Section */}
+                                                <div>
+                                                    <label className="text-[10px] uppercase text-gray-500 font-bold block mb-1">Magic Link (Mitarbeiter App)</label>
+
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            readOnly
+                                                            value={d.secret_key ? `${origin}/driver?token=${d.secret_key}` : 'Kein Key generiert'}
+                                                            className="bg-black text-gray-300 text-xs p-2 rounded border border-gray-800 w-full outline-none focus:border-emerald-500 transition font-mono"
+                                                            onClick={(e) => e.currentTarget.select()}
+                                                        />
+                                                        <button
+                                                            onClick={() => {
+                                                                if (d.secret_key) {
+                                                                    navigator.clipboard.writeText(`${origin}/driver?token=${d.secret_key}`);
+                                                                    setPopup({ type: 'success', message: 'Link kopiert! 📋' });
+                                                                    setTimeout(() => setPopup(null), 2000);
+                                                                }
+                                                            }}
+                                                            className="bg-gray-800 hover:bg-gray-700 text-white p-2 rounded border border-gray-700 transition"
+                                                            title="Kopieren"
+                                                        >
+                                                            📋
+                                                        </button>
+                                                    </div>
+                                                    <div className="flex gap-2 mt-2">
+                                                        <button
+                                                            onClick={() => d.secret_key && shareWhatsApp(d.secret_key, d.name)}
+                                                            className="flex-1 bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-1.5 rounded flex items-center justify-center gap-1 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            disabled={!d.secret_key}
+                                                        >
+                                                            WhatsApp 📱
+                                                        </button>
+                                                        <a
+                                                            href={d.secret_key ? `${origin}/driver?token=${d.secret_key}` : '#'}
+                                                            target="_blank"
+                                                            className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded flex items-center justify-center transition"
+                                                            title="Öffnen"
+                                                        >
+                                                            <ExternalLink size={14} />
+                                                        </a>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
                                     )}
                                 </div>
                             </div>
@@ -469,15 +561,35 @@ export default function TimeEntryForm() {
                         <h2 className="text-xl font-bold mb-4 text-green-500">Neuen Eintrag erstellen</h2>
                         <form onSubmit={saveShift} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
                             <div>
-                                <label className="block text-gray-500 text-xs font-bold mb-1">FAHRER</label>
+                                <label className="block text-gray-500 text-xs font-bold mb-1">MITARBEITER</label>
                                 <select className="w-full bg-black border border-gray-700 p-3 rounded text-white" value={selectedDriver} onChange={e => setSelectedDriver(e.target.value)} required>
                                     <option value="">-- Wählen --</option>
                                     {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                                 </select>
                             </div>
-                            <div>
+                            <div className="relative">
                                 <label className="block text-gray-500 text-xs font-bold mb-1">DATUM</label>
-                                <input type="date" className="w-full bg-black border border-gray-700 p-3 rounded text-white" value={date} onChange={e => setDate(e.target.value)} required />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCalendar(true)}
+                                    className={`w-full p-3 rounded border text-left flex justify-between items-center ${getHoliday(date) ? 'bg-yellow-900/40 border-yellow-500 text-yellow-400 font-bold shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'bg-black border-gray-700 text-white'}`}
+                                >
+                                    <span>{new Date(date).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                                    <span className="text-xl">📅</span>
+                                </button>
+
+                                {showCalendar && (
+                                    <>
+                                        <div className="fixed inset-0 z-40" onClick={() => setShowCalendar(false)}></div>
+                                        <div className="absolute top-full left-0 mt-2 z-50">
+                                            <Calendar
+                                                value={date}
+                                                onChange={(d) => setDate(d)}
+                                                onClose={() => setShowCalendar(false)}
+                                            />
+                                        </div>
+                                    </>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-gray-500 text-xs font-bold mb-1">START</label>
@@ -513,7 +625,7 @@ export default function TimeEntryForm() {
                         <table className="w-full text-sm text-left">
                             <thead className="uppercase border-b-2 border-black text-xs font-bold">
                                 <tr>
-                                    <th className="py-2">Fahrer</th>
+                                    <th className="py-2">Mitarbeiter</th>
                                     <th className="py-2">Zeitraum</th>
                                     <th className="py-2 text-right">Pause</th>
                                     <th className="py-2 text-right">Netto</th>
@@ -524,32 +636,38 @@ export default function TimeEntryForm() {
                                 {shifts.length === 0 ? (
                                     <tr><td colSpan={5} className="py-8 text-center text-gray-500">Keine Einträge vorhanden.</td></tr>
                                 ) : (
-                                    shifts.map(s => (
-                                        <tr key={s.id} className="hover:bg-gray-50">
-                                            <td className="py-3 font-bold">{getDriverName(s.drivers)}</td>
-                                            <td className="py-3">
-                                                {new Date(s.start_time).toLocaleDateString('de-DE')} <span className="text-gray-400">|</span> {new Date(s.start_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} - {new Date(s.end_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-                                            </td>
-                                            <td className="py-3 text-right text-gray-500">{s.break_minutes}m</td>
-                                            <td className="py-3 text-right font-bold text-green-700 text-lg">
-                                                {calculateNetDuration(s.start_time, s.end_time, s.break_minutes)}
-                                            </td>
-                                            <td className="py-3 text-right no-print">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        const dateStr = new Date(s.start_time).toLocaleDateString('de-DE');
-                                                        const timeStart = new Date(s.start_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-                                                        const timeEnd = new Date(s.end_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-                                                        deleteShift(s.id, getDriverName(s.drivers), dateStr, `${timeStart} - ${timeEnd}`);
-                                                    }}
-                                                    className="bg-red-100 text-red-600 px-3 py-1 rounded hover:bg-red-200 text-xs font-bold border border-red-200"
-                                                >
-                                                    Löschen
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))
+                                    shifts.map(s => {
+                                        const holiday = getHoliday(s.start_time);
+                                        return (
+                                            <tr key={s.id} className={holiday ? "bg-yellow-50 hover:bg-yellow-100 transition" : "hover:bg-gray-50 transition"} title={holiday || undefined}>
+                                                <td className="py-3 font-bold">
+                                                    {getDriverName(s.drivers)}
+                                                    {holiday && <span className="ml-2 text-xs bg-yellow-100 text-yellow-700 px-1 rounded border border-yellow-300 no-print">{holiday}</span>}
+                                                </td>
+                                                <td className="py-3">
+                                                    {new Date(s.start_time).toLocaleDateString('de-DE')} <span className="text-gray-400">|</span> {new Date(s.start_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} - {new Date(s.end_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                                                </td>
+                                                <td className="py-3 text-right text-gray-500">{s.break_minutes}m</td>
+                                                <td className="py-3 text-right font-bold text-green-700 text-lg">
+                                                    {calculateNetDuration(s.start_time, s.end_time, s.break_minutes)}
+                                                </td>
+                                                <td className="py-3 text-right no-print">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            const dateStr = new Date(s.start_time).toLocaleDateString('de-DE');
+                                                            const timeStart = new Date(s.start_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                                                            const timeEnd = new Date(s.end_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                                                            deleteShift(s.id, getDriverName(s.drivers), dateStr, `${timeStart} - ${timeEnd}`);
+                                                        }}
+                                                        className="bg-red-100 text-red-600 px-3 py-1 rounded hover:bg-red-200 text-xs font-bold border border-red-200"
+                                                    >
+                                                        Löschen
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
                                 )}
                             </tbody>
                         </table>
@@ -564,20 +682,20 @@ export default function TimeEntryForm() {
                     <div className="hidden print:block mb-8 border-b-2 border-black pb-4">
                         <h1 className="text-3xl font-bold">Stundenabrechnung</h1>
                         <p className="text-gray-600">
-                            {reportDriver ? drivers.find(d => d.id === reportDriver)?.name : 'Alle Fahrer'} | {new Date(reportMonth).toLocaleString('de-DE', { month: 'long', year: 'numeric' })}
+                            {reportDriver ? drivers.find(d => d.id === reportDriver)?.name : 'Alle Mitarbeiter'} | {new Date(reportMonth).toLocaleString('de-DE', { month: 'long', year: 'numeric' })}
                         </p>
                     </div>
 
                     {/* Filters (Hidden on print) */}
                     <div className="no-print print:hidden bg-gray-100 p-6 rounded mb-8 flex flex-wrap gap-4 items-end border border-gray-200">
                         <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Fahrer</label>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Mitarbeiter</label>
                             <select
                                 className="bg-white border border-gray-300 p-2 rounded w-48"
                                 value={reportDriver}
                                 onChange={e => setReportDriver(e.target.value)}
                             >
-                                <option value="">-- Alle Fahrer --</option>
+                                <option value="">-- Alle Mitarbeiter --</option>
                                 {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                             </select>
                         </div>
@@ -617,8 +735,7 @@ export default function TimeEntryForm() {
                         <thead className="uppercase border-b-2 border-black text-xs font-bold">
                             <tr>
                                 <th className="py-2">Datum</th>
-                                <th className="py-2">Fahrer</th>
-                                <th className="py-2">Uhrzeit</th>
+                                <th className="py-2">Mitarbeiter</th>
                                 <th className="py-2 text-right">Pause</th>
                                 <th className="py-2 text-right">Stunden</th>
                             </tr>
@@ -627,19 +744,25 @@ export default function TimeEntryForm() {
                             {reportData.length === 0 ? (
                                 <tr><td colSpan={5} className="py-8 text-center text-gray-500">Keine Daten für diesen Zeitraum.</td></tr>
                             ) : (
-                                reportData.map(s => (
-                                    <tr key={s.id}>
-                                        <td className="py-3 font-mono">{new Date(s.start_time).toLocaleDateString('de-DE')}</td>
-                                        <td className="py-3 font-bold">{getDriverName(s.drivers)}</td>
-                                        <td className="py-3">
-                                            {new Date(s.start_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} - {new Date(s.end_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
-                                        </td>
-                                        <td className="py-3 text-right">{s.break_minutes} min</td>
-                                        <td className="py-3 text-right font-bold">
-                                            {calculateNetDuration(s.start_time, s.end_time, s.break_minutes)}
-                                        </td>
-                                    </tr>
-                                ))
+                                reportData.map(s => {
+                                    const holiday = getHoliday(s.start_time);
+                                    return (
+                                        <tr key={s.id} className={holiday ? "bg-yellow-50 print:bg-gray-100" : ""}>
+                                            <td className="py-3 font-mono">
+                                                {new Date(s.start_time).toLocaleDateString('de-DE')}
+                                                {holiday && <span className="ml-2 text-[10px] uppercase font-bold text-yellow-600 border border-yellow-300 px-1 rounded block w-fit">{holiday}</span>}
+                                            </td>
+                                            <td className="py-3 font-bold">{getDriverName(s.drivers)}</td>
+                                            <td className="py-3">
+                                                {new Date(s.start_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} - {new Date(s.end_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                                            </td>
+                                            <td className="py-3 text-right">{s.break_minutes} min</td>
+                                            <td className="py-3 text-right font-bold">
+                                                {calculateNetDuration(s.start_time, s.end_time, s.break_minutes)}
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>
