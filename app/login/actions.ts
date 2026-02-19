@@ -15,11 +15,11 @@ export async function login(formData: FormData) {
     const { error } = await supabase.auth.signInWithPassword(data)
 
     if (error) {
-        redirect('/login?error=Could not authenticate user')
+        return { error: 'Could not authenticate user' }
     }
 
     revalidatePath('/', 'layout')
-    redirect('/dashboard')
+    return { success: true }
 }
 
 export async function signup(formData: FormData) {
@@ -40,9 +40,9 @@ export async function signup(formData: FormData) {
     const { error } = await supabase.auth.signUp(data)
 
     if (error) {
-        redirect('/login?error=Could not create user: ' + error.message)
+        return { error: 'Could not create user: ' + error.message }
     }
 
     revalidatePath('/', 'layout')
-    redirect('/dashboard')
+    return { success: true }
 }

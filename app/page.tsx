@@ -154,9 +154,9 @@ export default function LandingPage() {
                 <li className="flex items-center gap-3 text-sm text-zinc-300"><CheckCircle size={18} className="text-zinc-500" /> GoBD Audit-Log</li>
                 <li className="flex items-center gap-3 text-sm text-zinc-300"><CheckCircle size={18} className="text-zinc-500" /> Berichte & Filter</li>
               </ul>
-              <a href="https://buy.stripe.com/cNi3cv40t6IS1f54kEebu00" className="w-full bg-white text-black py-3 rounded-lg font-bold text-center hover:bg-zinc-200 transition block">
+              <Link href="/login?plan=basis" className="w-full bg-white text-black py-3 rounded-lg font-bold text-center hover:bg-zinc-200 transition">
                 Jetzt starten
-              </a>
+              </Link>
             </div>
 
             {/* PRO */}
@@ -169,9 +169,9 @@ export default function LandingPage() {
                 <li className="flex items-center gap-3 text-sm"><CheckCircle size={18} className="text-emerald-500" /> GoBD Audit-Log</li>
                 <li className="flex items-center gap-3 text-sm"><CheckCircle size={18} className="text-emerald-500" /> Berichte & Filter</li>
               </ul>
-              <a href="https://buy.stripe.com/bJe9AT40t1oy3ndg3mebu01" className="w-full bg-emerald-500 text-black py-3 rounded-lg font-bold text-center hover:bg-emerald-400 shadow-lg hover:shadow-emerald-500/25 transition block">
+              <Link href="/login?plan=pro" className="w-full bg-emerald-500 text-black py-3 rounded-lg font-bold text-center hover:bg-emerald-400 shadow-lg hover:shadow-emerald-500/25 transition">
                 30 Tage kostenlos testen
-              </a>
+              </Link>
             </div>
 
             {/* PREMIUM */}
@@ -183,9 +183,9 @@ export default function LandingPage() {
                 <li className="flex items-center gap-3 text-sm text-zinc-300"><CheckCircle size={18} className="text-purple-500" /> Alle Pro-Funktionen</li>
                 <li className="flex items-center gap-3 text-sm text-zinc-300"><CheckCircle size={18} className="text-purple-500" /> VIP Support</li>
               </ul>
-              <a href="https://buy.stripe.com/28E5kD7cF6IS7DtaJ2ebu02" className="w-full bg-purple-600 text-white py-3 rounded-lg font-bold text-center hover:bg-purple-500 shadow-lg hover:shadow-purple-500/25 transition block">
+              <Link href="/login?plan=premium" className="w-full bg-purple-600 text-white py-3 rounded-lg font-bold text-center hover:bg-purple-500 shadow-lg hover:shadow-purple-500/25 transition">
                 Jetzt starten
-              </a>
+              </Link>
             </div>
           </div>
         </div>

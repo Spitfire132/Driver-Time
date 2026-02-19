@@ -3,11 +3,15 @@
 import { login, signup } from './actions';
 import { Clock } from 'lucide-react';
 import { useState, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
 
 function LoginContent() {
+    const router = useRouter();
+    const supabase = createClient();
     const searchParams = useSearchParams();
     const error = searchParams.get('error');
+    const plan = searchParams.get('plan');
     const [isSignUp, setIsSignUp] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [formError, setFormError] = useState<string | null>(error);
@@ -21,18 +25,37 @@ function LoginContent() {
         const action = isSignUp ? signup : login;
 
         try {
-            await action(formData);
-            // On success, redirect happens server-side or via router
+            const result = await action(formData);
+
+            if (result?.error) {
+                setFormError(result.error);
+                return;
+            }
+
+            // Success! Check for plan and redirect
+            if (plan) {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user && user.email) {
+                    let stripeLink = '';
+                    if (plan === 'basis') stripeLink = 'https://buy.stripe.com/cNi3cv40t6IS1f54kEebu00';
+                    if (plan === 'pro') stripeLink = 'https://buy.stripe.com/bJe9AT40t1oy3ndg3mebu01';
+                    if (plan === 'premium') stripeLink = 'https://buy.stripe.com/28E5kD7cF6IS7DtaJ2ebu02';
+
+                    if (stripeLink) {
+                        const checkoutUrl = `${stripeLink}?prefilled_email=${encodeURIComponent(user.email)}&client_reference_id=${user.id}`;
+                        window.location.href = checkoutUrl;
+                        return;
+                    }
+                }
+            }
+
+            // Default redirect
+            router.push('/dashboard');
+            router.refresh();
+
         } catch (err: any) {
             console.error("Auth Error:", err);
-            // Customize error message based on common Supabase errors if possible
-            if (err.message.includes('already registered')) {
-                setFormError('Diese E-Mail-Adresse wird bereits verwendet.');
-            } else if (err.message.includes('Invalid login credentials')) {
-                setFormError('Falsche E-Mail oder Passwort.');
-            } else {
-                setFormError(err.message || 'Ein Fehler ist aufgetreten. Bitte versuche es erneut.');
-            }
+            setFormError('Ein unerwarteter Fehler ist aufgetreten.');
         } finally {
             setIsLoading(false);
         }
