@@ -9,6 +9,34 @@ function LoginContent() {
     const searchParams = useSearchParams();
     const error = searchParams.get('error');
     const [isSignUp, setIsSignUp] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [formError, setFormError] = useState<string | null>(error);
+
+    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        setIsLoading(true);
+        setFormError(null);
+
+        const formData = new FormData(event.currentTarget);
+        const action = isSignUp ? signup : login;
+
+        try {
+            await action(formData);
+            // On success, redirect happens server-side or via router
+        } catch (err: any) {
+            console.error("Auth Error:", err);
+            // Customize error message based on common Supabase errors if possible
+            if (err.message.includes('already registered')) {
+                setFormError('Diese E-Mail-Adresse wird bereits verwendet.');
+            } else if (err.message.includes('Invalid login credentials')) {
+                setFormError('Falsche E-Mail oder Passwort.');
+            } else {
+                setFormError(err.message || 'Ein Fehler ist aufgetreten. Bitte versuche es erneut.');
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     return (
         <main className="min-h-screen bg-black text-zinc-100 flex flex-col items-center justify-center p-4 font-sans selection:bg-emerald-500/30">
@@ -24,7 +52,7 @@ function LoginContent() {
                 </div>
 
                 <div className="bg-zinc-900/50 border border-zinc-800 p-8 rounded-xl shadow-lg backdrop-blur-sm">
-                    <form className="space-y-6">
+                    <form className="space-y-6" onSubmit={handleSubmit}>
                         {isSignUp && (
                             <>
                                 <div className="grid grid-cols-2 gap-4">
@@ -99,23 +127,37 @@ function LoginContent() {
                             />
                         </div>
 
-                        {error && (
-                            <div className="p-3 bg-rose-950/30 border border-rose-900/50 rounded-lg text-sm text-rose-400 text-center">
-                                {error}
+                        {formError && (
+                            <div className="p-3 bg-red-950/30 border border-red-900/50 rounded-lg text-sm text-red-500 text-center font-bold animate-in fade-in slide-in-from-top-2">
+                                {formError}
                             </div>
                         )}
 
                         <button
-                            formAction={isSignUp ? signup : login}
-                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-lg transition-colors cursor-pointer text-lg shadow-lg shadow-emerald-900/20"
+                            type="submit"
+                            disabled={isLoading}
+                            className={`w-full font-medium py-3 rounded-lg transition-all cursor-pointer text-lg shadow-lg flex justify-center items-center gap-2 ${isLoading
+                                ? 'bg-zinc-800 text-zinc-400 cursor-not-allowed'
+                                : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/20'
+                                }`}
                         >
-                            {isSignUp ? 'Jetzt Registrieren' : 'Anmelden'}
+                            {isLoading ? (
+                                <>
+                                    <Clock className="animate-spin" size={20} />
+                                    Lädt...
+                                </>
+                            ) : (
+                                isSignUp ? 'Jetzt Registrieren' : 'Anmelden'
+                            )}
                         </button>
 
                         <div className="text-center pt-2">
                             <button
                                 type="button"
-                                onClick={() => setIsSignUp(!isSignUp)}
+                                onClick={() => {
+                                    setIsSignUp(!isSignUp);
+                                    setFormError(null);
+                                }}
                                 className="text-sm text-zinc-400 hover:text-white underline transition-colors"
                             >
                                 {isSignUp ? 'Bereits einen Account? Hier anmelden' : 'Noch keinen Account? Hier registrieren'}

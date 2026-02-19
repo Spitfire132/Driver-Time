@@ -135,10 +135,66 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Pricing Section */}
+      <section className="py-20 px-6 bg-zinc-950 border-t border-zinc-900">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-5xl font-bold text-white mb-6">Wähle den passenden Tarif.</h2>
+            <p className="text-zinc-400 text-lg">Keine versteckten Kosten. Upgrade jederzeit möglich.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
+            {/* BASIS */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 flex flex-col h-full hover:border-zinc-700 transition">
+              <h2 className="text-xl font-bold text-zinc-300 mb-2">Basis</h2>
+              <div className="text-3xl font-bold mb-6">19€ <span className="text-sm text-zinc-500 font-normal">/ Monat</span></div>
+              <ul className="space-y-4 mb-8 flex-1">
+                <li className="flex items-center gap-3 text-sm text-zinc-300"><CheckCircle size={18} className="text-zinc-500" /> Max. 5 Mitarbeiter</li>
+                <li className="flex items-center gap-3 text-sm text-zinc-300"><CheckCircle size={18} className="text-zinc-500" /> Manuelle Zeiterfassung</li>
+                <li className="flex items-center gap-3 text-sm text-zinc-300"><CheckCircle size={18} className="text-zinc-500" /> GoBD Audit-Log</li>
+                <li className="flex items-center gap-3 text-sm text-zinc-300"><CheckCircle size={18} className="text-zinc-500" /> Berichte & Filter</li>
+              </ul>
+              <a href="https://buy.stripe.com/cNi3cv40t6IS1f54kEebu00" className="w-full bg-white text-black py-3 rounded-lg font-bold text-center hover:bg-zinc-200 transition block">
+                Jetzt starten
+              </a>
+            </div>
+
+            {/* PRO */}
+            <div className="bg-zinc-900 border-2 border-emerald-500 rounded-2xl p-8 flex flex-col h-full relative transform md:-translate-y-4 shadow-2xl shadow-emerald-900/20">
+              <h2 className="text-xl font-bold text-emerald-400 mb-2">Pro</h2>
+              <div className="text-4xl font-bold mb-6 text-white">39€ <span className="text-sm text-zinc-500 font-normal">/ Monat</span></div>
+              <ul className="space-y-4 mb-8 flex-1">
+                <li className="flex items-center gap-3 text-sm"><CheckCircle size={18} className="text-emerald-500" /> <span className="font-bold text-white">Max. 20 Mitarbeiter</span></li>
+                <li className="flex items-center gap-3 text-sm"><CheckCircle size={18} className="text-emerald-500" /> 1-Klick Magic Links (App)</li>
+                <li className="flex items-center gap-3 text-sm"><CheckCircle size={18} className="text-emerald-500" /> GoBD Audit-Log</li>
+                <li className="flex items-center gap-3 text-sm"><CheckCircle size={18} className="text-emerald-500" /> Berichte & Filter</li>
+              </ul>
+              <a href="https://buy.stripe.com/bJe9AT40t1oy3ndg3mebu01" className="w-full bg-emerald-500 text-black py-3 rounded-lg font-bold text-center hover:bg-emerald-400 shadow-lg hover:shadow-emerald-500/25 transition block">
+                30 Tage kostenlos testen
+              </a>
+            </div>
+
+            {/* PREMIUM */}
+            <div className="bg-zinc-900 border border-purple-900/50 rounded-2xl p-8 flex flex-col h-full hover:border-purple-500/50 transition">
+              <h2 className="text-xl font-bold text-purple-400 mb-2">Premium</h2>
+              <div className="text-3xl font-bold mb-6">79€ <span className="text-sm text-zinc-500 font-normal">/ Monat</span></div>
+              <ul className="space-y-4 mb-8 flex-1">
+                <li className="flex items-center gap-3 text-sm text-zinc-300"><CheckCircle size={18} className="text-purple-500" /> <span className="font-bold text-white">Unbegrenzte Mitarbeiter</span></li>
+                <li className="flex items-center gap-3 text-sm text-zinc-300"><CheckCircle size={18} className="text-purple-500" /> Alle Pro-Funktionen</li>
+                <li className="flex items-center gap-3 text-sm text-zinc-300"><CheckCircle size={18} className="text-purple-500" /> VIP Support</li>
+              </ul>
+              <a href="https://buy.stripe.com/28E5kD7cF6IS7DtaJ2ebu02" className="w-full bg-purple-600 text-white py-3 rounded-lg font-bold text-center hover:bg-purple-500 shadow-lg hover:shadow-purple-500/25 transition block">
+                Jetzt starten
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="py-8 text-center text-zinc-600 text-sm border-t border-zinc-900">
         <p>&copy; {new Date().getFullYear()} TimeNova. Alle Rechte vorbehalten.</p>
       </footer>
-    </div>
+    </div >
   );
 }

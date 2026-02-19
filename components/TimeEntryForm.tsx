@@ -28,6 +28,7 @@ export default function TimeEntryForm() {
     const [drivers, setDrivers] = useState<any[]>([]);
     const [shifts, setShifts] = useState<any[]>([]);
     const [auditLogs, setAuditLogs] = useState<any[]>([]);
+    const [subscription, setSubscription] = useState<any>(null); // { subscription_plan, trial_ends_at }
 
 
     // Report State
@@ -78,7 +79,7 @@ export default function TimeEntryForm() {
                 setUser(data.session.user);
 
                 // Jetzt laden wir die Daten parallel
-                await Promise.all([fetchDrivers(), fetchShifts()]);
+                await Promise.all([fetchDrivers(), fetchShifts(), fetchSubscription()]);
                 setLoading(false);
             } catch (err) {
                 console.error("Init Fehler:", err);
@@ -143,6 +144,27 @@ export default function TimeEntryForm() {
         }
     };
 
+    const fetchSubscription = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('subscription_plan, trial_ends_at')
+            .eq('id', user.id)
+            .single();
+
+        if (data) {
+            setSubscription(data);
+        } else {
+            console.warn("No Subscription Profile found.");
+            // Fallback: Default to trial if no profile found (safe default)
+            const thirtyDaysFromNow = new Date();
+            thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+            setSubscription({ subscription_plan: 'trial', trial_ends_at: thirtyDaysFromNow.toISOString() });
+        }
+    };
+
     const fetchAuditLogs = async () => {
         const { data } = await supabase
             .from('audit_logs')
@@ -199,9 +221,16 @@ export default function TimeEntryForm() {
 
     // --- 4. BUTTON AKTIONEN ---
     const handleSignOut = async () => {
-        await supabase.auth.signOut();
-        router.refresh(); // Seite neu laden
-        window.location.href = '/'; // Harter Redirect zur Startseite
+        try {
+            await supabase.auth.signOut();
+        } catch (error) {
+            console.error('Error signing out:', error);
+        } finally {
+            localStorage.clear();
+            sessionStorage.clear();
+            // Seite neu laden / Harter Redirect
+            window.location.href = '/';
+        }
     };
 
     const addDriver = async () => {
@@ -412,6 +441,26 @@ export default function TimeEntryForm() {
         );
     }
     // --- RENDER HELPERS ---
+    const getSubscriptionStatus = () => {
+        if (!subscription) return { daysLeft: 0, plan: 'basis', isTrial: false, isProOrPremium: false };
+
+        const trialEnds = new Date(subscription.trial_ends_at);
+        const now = new Date();
+        const diffTime = trialEnds.getTime() - now.getTime();
+        const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        const plan = subscription.subscription_plan || 'basis';
+        const isTrial = plan === 'trial';
+        const isProOrPremium = plan === 'pro' || plan === 'premium';
+
+        return { daysLeft, plan, isTrial, isProOrPremium };
+    };
+
+    const { daysLeft, plan, isTrial, isProOrPremium } = getSubscriptionStatus();
+
+    // Magic Link Lock Logic
+    // Access authorized if: (Trial AND days > 0) OR (Pro/Premium)
+    const isMagicLinkUnlocked = (isTrial && daysLeft > 0) || isProOrPremium;
 
 
     if (loading) return <div className="text-white p-10 text-center animate-pulse">Lade Dashboard... ⏳</div>;
@@ -420,7 +469,20 @@ export default function TimeEntryForm() {
     return (
         <div className="bg-black text-white p-6 font-sans rounded-lg min-h-screen">
 
+            {/* SUBSCRIPTION BANNER */}
+            {isTrial && daysLeft > 0 && (
+                <div className="bg-yellow-600 text-black text-center py-2 font-bold text-sm mb-4 rounded">
+                    🎁 Deine kostenlose TimeNova Pro-Testphase endet in {daysLeft} Tagen.
+                </div>
+            )}
 
+            {/* Expired / Basis Banner */}
+            {((isTrial && daysLeft <= 0) || plan === 'basis') && (
+                <div className="bg-red-600 text-white text-center py-2 font-bold text-sm flex justify-center items-center gap-4 mb-4 rounded">
+                    <span>🚨 Deine Testphase ist abgelaufen. Bitte upgrade deinen Tarif, um alle Funktionen zu behalten!</span>
+                    <button onClick={() => window.location.href = '/dashboard/upgrade'} className="bg-white text-red-600 px-3 py-1 rounded text-xs uppercase font-black hover:bg-gray-100">Jetzt Upgraden</button>
+                </div>
+            )}
 
             {/* HEADER */}
             <div className="no-print border-b border-gray-800 pb-6 mb-6 print:hidden">
@@ -512,43 +574,67 @@ export default function TimeEntryForm() {
                                                     <label className="text-[10px] uppercase text-gray-500 font-bold block mb-1">Magic Link (Mitarbeiter App)</label>
 
                                                     <div className="flex gap-2">
-                                                        <input
-                                                            readOnly
-                                                            value={d.secret_key ? `${origin}/driver?token=${d.secret_key}` : 'Kein Key generiert'}
-                                                            className="bg-black text-gray-300 text-xs p-2 rounded border border-gray-800 w-full outline-none focus:border-emerald-500 transition font-mono"
-                                                            onClick={(e) => e.currentTarget.select()}
-                                                        />
-                                                        <button
-                                                            onClick={() => {
-                                                                if (d.secret_key) {
-                                                                    navigator.clipboard.writeText(`${origin}/driver?token=${d.secret_key}`);
-                                                                    setPopup({ type: 'success', message: 'Link kopiert! 📋' });
-                                                                    setTimeout(() => setPopup(null), 2000);
-                                                                }
-                                                            }}
-                                                            className="bg-gray-800 hover:bg-gray-700 text-white p-2 rounded border border-gray-700 transition"
-                                                            title="Kopieren"
-                                                        >
-                                                            📋
-                                                        </button>
+                                                        {!isMagicLinkUnlocked ? (
+                                                            <div className="relative w-full bg-black border border-gray-800 rounded p-4 text-center overflow-hidden group/paywall">
+                                                                <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-[2px] z-10 flex flex-col items-center justify-center">
+                                                                    <div className="bg-gray-800 p-2 rounded-full mb-2">
+                                                                        <span className="text-2xl">🔒</span>
+                                                                    </div>
+                                                                    <p className="text-xs text-gray-400 font-bold px-2 text-center">
+                                                                        Magic Links sind gesperrt.<br />Upgrade auf Pro notwendig.
+                                                                    </p>
+                                                                    <button onClick={() => window.location.href = '/dashboard/upgrade'} className="mt-2 bg-green-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-green-500">
+                                                                        Jetzt upgraden
+                                                                    </button>
+                                                                </div>
+                                                                <div className="opacity-20 blur-[1px] select-none pointer-events-none">
+                                                                    <input type="text" value="https://timenova.app/driver?token=..." className="w-full bg-transparent text-xs mb-2" disabled />
+                                                                    <div className="flex gap-2 justify-center"><button className="bg-gray-700 h-6 w-16 rounded"></button><button className="bg-green-700 h-6 w-16 rounded"></button></div>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                <input
+                                                                    readOnly
+                                                                    value={d.secret_key ? `${origin}/driver?token=${d.secret_key}` : 'Kein Key generiert'}
+                                                                    className="bg-black text-gray-300 text-xs p-2 rounded border border-gray-800 w-full outline-none focus:border-emerald-500 transition font-mono"
+                                                                    onClick={(e) => e.currentTarget.select()}
+                                                                />
+                                                                <button
+                                                                    onClick={() => {
+                                                                        if (d.secret_key) {
+                                                                            navigator.clipboard.writeText(`${origin}/driver?token=${d.secret_key}`);
+                                                                            setPopup({ type: 'success', message: 'Link kopiert! 📋' });
+                                                                            setTimeout(() => setPopup(null), 2000);
+                                                                        }
+                                                                    }}
+                                                                    className="bg-gray-800 hover:bg-gray-700 text-white p-2 rounded border border-gray-700 transition"
+                                                                    title="Kopieren"
+                                                                >
+                                                                    📋
+                                                                </button>
+                                                            </>
+                                                        )}
                                                     </div>
-                                                    <div className="flex gap-2 mt-2">
-                                                        <button
-                                                            onClick={() => d.secret_key && shareWhatsApp(d.secret_key, d.name)}
-                                                            className="flex-1 bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-1.5 rounded flex items-center justify-center gap-1 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                                            disabled={!d.secret_key}
-                                                        >
-                                                            WhatsApp 📱
-                                                        </button>
-                                                        <a
-                                                            href={d.secret_key ? `${origin}/driver?token=${d.secret_key}` : '#'}
-                                                            target="_blank"
-                                                            className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded flex items-center justify-center transition"
-                                                            title="Öffnen"
-                                                        >
-                                                            <ExternalLink size={14} />
-                                                        </a>
-                                                    </div>
+                                                    {isMagicLinkUnlocked && (
+                                                        <div className="flex gap-2 mt-2">
+                                                            <button
+                                                                onClick={() => d.secret_key && shareWhatsApp(d.secret_key, d.name)}
+                                                                className="flex-1 bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-1.5 rounded flex items-center justify-center gap-1 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                disabled={!d.secret_key}
+                                                            >
+                                                                WhatsApp 📱
+                                                            </button>
+                                                            <a
+                                                                href={d.secret_key ? `${origin}/driver?token=${d.secret_key}` : '#'}
+                                                                target="_blank"
+                                                                className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded flex items-center justify-center transition"
+                                                                title="Öffnen"
+                                                            >
+                                                                <ExternalLink size={14} />
+                                                            </a>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))
